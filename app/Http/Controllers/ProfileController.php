@@ -2,59 +2,124 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\ProfileUpdateRequest;
-use Illuminate\Http\RedirectResponse;
+use App\Models\Profile;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Redirect;
-use Illuminate\View\View;
+use Illuminate\Support\Facades\Storage; // Penting untuk mengelola file
 
 class ProfileController extends Controller
 {
     /**
-     * Display the user's profile form.
+     * Display a listing of the resource.
      */
-    public function edit(Request $request): View
+    public function index()
     {
-        return view('profile.edit', [
-            'user' => $request->user(),
-        ]);
+        // Ambil semua data profile dan kirim ke view 'index'
+        $profiles = Profile::all();
+        return view('profiles.index', compact('profiles'));
     }
 
     /**
-     * Update the user's profile information.
+     * Show the form for creating a new resource.
      */
-    public function update(ProfileUpdateRequest $request): RedirectResponse
+    public function create()
     {
-        $request->user()->fill($request->validated());
+        // Tampilkan halaman form 'create'
+        return view('profiles.create');
+    }
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+    /**
+     * Store a newly created resource in storage.
+     */
+    public function store(Request $request)
+    {
+        // Validasi input
+        $request->validate([
+            'nama' => 'required|string|max:255',
+            'gambar' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048', // Wajib gambar, maks 2MB
+        ]);
+
+        // 1. Simpan Gambar
+        // Gambar akan disimpan di folder 'storage/app/public/pasfoto'
+        $path = $request->file('gambar')->store('public/pasfoto');
+        
+        // 2. Buat data baru di database
+        Profile::create([
+            'nama' => $request->nama,
+            'gambar' => $path // Simpan path gambarnya
+        ]);
+
+        // Redirect kembali ke halaman index dengan pesan sukses
+        return redirect()->route('myprofiles.index')
+                         ->with('success', 'Profile berhasil dibuat.');
+    }
+
+    /**
+     * Display the specified resource.
+     * (Kita tidak pakai ini, jadi biarkan kosong atau redirect)
+     */
+    public function show(Profile $profile)
+    {
+        // Redirect ke index
+        return redirect()->route('myprofiles.index');
+    }
+
+    /**
+     * Show the form for editing the specified resource.
+     */
+    public function edit($id)
+    {
+        // Cari profile berdasarkan ID
+        $profile = Profile::findOrFail($id);
+        // Tampilkan view 'edit' dan kirim data profile
+        return view('profiles.edit', compact('profile'));
+    }
+
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update(Request $request, $id)
+    {
+        $profile = Profile::findOrFail($id);
+        
+        $request->validate([
+            'nama' => 'required|string|max:255',
+            'gambar' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048', // Gambar boleh kosong saat update
+        ]);
+
+        $path = $profile->gambar; // Path gambar default (yang lama)
+
+        // Cek jika ada file gambar baru di-upload
+        if ($request->hasFile('gambar')) {
+            // 1. Hapus gambar lama
+            Storage::delete($profile->gambar); 
+            // 2. Simpan gambar baru
+            $path = $request->file('gambar')->store('public/pasfoto');
         }
 
-        $request->user()->save();
+        // Update data di database
+        $profile->update([
+            'nama' => $request->nama,
+            'gambar' => $path
+        ]);
 
-        return Redirect::route('profile.edit')->with('status', 'profile-updated');
+        return redirect()->route('myprofiles.index')
+                         ->with('success', 'Profile berhasil diperbarui.');
     }
 
     /**
-     * Delete the user's account.
+     * Remove the specified resource from storage.
      */
-    public function destroy(Request $request): RedirectResponse
+    public function destroy($id)
     {
-        $request->validateWithBag('userDeletion', [
-            'password' => ['required', 'current_password'],
-        ]);
+        $profile = Profile::findOrFail($id);
+        
+        // Hapus file gambar dari storage
+        Storage::delete($profile->gambar);
+        
+        // Hapus data dari database
+        $profile->delete();
 
-        $user = $request->user();
-
-        Auth::logout();
-
-        $user->delete();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return Redirect::to('/');
+        return redirect()->route('myprofiles.index')
+                         ->with('success', 'Profile berhasil dihapus.');
     }
 }
